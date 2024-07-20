@@ -2,17 +2,18 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import React, { useEffect, useState } from "react";
 import ReactMapGL, { Marker, NavigationControl } from "react-map-gl";
 import axios from "axios";
-import * as XLSX from "xlsx";
+//import * as XLSX from "xlsx";
+//import { CSVLink } from "react-csv";
 import "./App.css";
 import atmData from "./data/atmData.json";
-import LoadingScreen from "./components/LoadingScreen";
+//import LoadingScreen from "./components/LoadingScreen";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faMapMarkerAlt, faPerson } from "@fortawesome/free-solid-svg-icons";
 
 const TOKEN = process.env.REACT_APP_TOKEN;
 
 function haversineDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371000; // Radius of the Earth in meters
+  const R = 6371; // Radius of the Earth in kilometers
   //calculate the difference in latitude and longitude between the two points, converted from degrees to radians.
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
@@ -24,20 +25,23 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); //angular distance in radians
-  return R * c;
+  return R * c; //distance in kilometers
 }
 
 function App() {
   const [viewport, setViewport] = useState({
-    latitude: 39.9334,
-    longitude: 32.8597,
+    latitude: 39.9334, //default
+    longitude: 32.8597, //default
     zoom: 7,
     bearing: 0,
     pitch: 0,
+    transitionDuration: 0,
   });
 
   const [userLocation, setUserLocation] = useState(null);
-  const [loading, setLoading] = useState(true);
+  //const [loading, setLoading] = useState(true);
+  const [nearestATMs, setNearestATMs] = useState([]);
+  const [recommendedATM, setRecommendedATM] = useState(null);
 
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
@@ -49,12 +53,13 @@ function App() {
           latitude,
           longitude,
           zoom: 12,
+          transitionDuration: 2000,
         }));
-        setLoading(false);
+        //setLoading(false);
       },
       (error) => {
         console.error("Error getting user location:", error);
-        setLoading(false);
+        //setLoading(false);
       }
     );
   }, []);
@@ -68,24 +73,46 @@ function App() {
           atm.latitude,
           atm.longitude
         );
-        return { ...atm, distance: Math.round(distance) };
+        return { atmId: atm.atmId, distance: Math.round(distance) };
       });
 
       distances.sort((a, b) => a.distance - b.distance);
       const nearestATMs = distances.slice(0, 10);
+      setNearestATMs(nearestATMs);
 
+      /*
       const worksheet = XLSX.utils.json_to_sheet(nearestATMs);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Nearest ATMs");
       XLSX.writeFile(workbook, "nearest_atms.xlsx");
       console.log("Excel file created with nearest ATMs:", nearestATMs);
+      */
+
+      // Create CSV content
+      const csvContent = [
+        ["ATM ID", "Latitude", "Longitude", "Distance"],
+        ...nearestATMs.map((atm) => [atm.atmId, atm.distance]),
+      ]
+        .map((e) => e.join(","))
+        .join("\n");
+
+      // Send CSV to endpoint using axios
+      axios
+        .post("/nearest-atms", csvContent, {
+          headers: {
+            "Content-Type": "text/csv",
+          },
+        })
+        .then((response) => console.log("Success:", response.data))
+        .catch((error) => console.error("Error:", error));
     }
   }, [userLocation]);
 
+  /*
   if (loading) {
     return <LoadingScreen />;
   }
-
+*/
   return (
     <div style={{ width: "100vw", height: "100vh" }}>
       <ReactMapGL
@@ -121,6 +148,17 @@ function App() {
             />
           </Marker>
         ))}
+        {recommendedATM && (
+          <Marker
+            latitude={recommendedATM.latitude}
+            longitude={recommendedATM.longitude}
+          >
+            <FontAwesomeIcon
+              icon={faMapMarkerAlt}
+              style={{ color: "green", fontSize: "24px" }}
+            />
+          </Marker>
+        )}
       </ReactMapGL>
     </div>
   );
