@@ -2,8 +2,6 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import React, { useEffect, useState } from "react";
 import ReactMapGL, { Marker, NavigationControl } from "react-map-gl";
 import axios from "axios";
-//import * as XLSX from "xlsx";
-//import { CSVLink } from "react-csv";
 import "./App.css";
 import atmData from "./data/atmData.json";
 //import LoadingScreen from "./components/LoadingScreen";
@@ -41,7 +39,7 @@ function App() {
   const [userLocation, setUserLocation] = useState(null);
   //const [loading, setLoading] = useState(true);
   const [nearestATMs, setNearestATMs] = useState([]);
-  const [recommendedATM, setRecommendedATM] = useState(null);
+  const [recommendedATMs, setRecommendedATMs] = useState(null);
 
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
@@ -53,7 +51,7 @@ function App() {
           latitude,
           longitude,
           zoom: 12,
-          transitionDuration: 2000,
+          transitionDuration: 2300,
         }));
         //setLoading(false);
       },
@@ -73,24 +71,16 @@ function App() {
           atm.latitude,
           atm.longitude
         );
-        return { atmId: atm.atmId, distance: Math.round(distance) };
+        return { atmId: atm.atmId, distance }; //: Math.round(distance)
       });
 
       distances.sort((a, b) => a.distance - b.distance);
       const nearestATMs = distances.slice(0, 10);
       setNearestATMs(nearestATMs);
 
-      /*
-      const worksheet = XLSX.utils.json_to_sheet(nearestATMs);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Nearest ATMs");
-      XLSX.writeFile(workbook, "nearest_atms.xlsx");
-      console.log("Excel file created with nearest ATMs:", nearestATMs);
-      */
-
       // Create CSV content
       const csvContent = [
-        ["ATM ID", "Latitude", "Longitude", "Distance"],
+        ["ATM ID", "Distance"],
         ...nearestATMs.map((atm) => [atm.atmId, atm.distance]),
       ]
         .map((e) => e.join(","))
@@ -103,7 +93,30 @@ function App() {
             "Content-Type": "text/csv",
           },
         })
-        .then((response) => console.log("Success:", response.data))
+        .then((response) => {
+          console.log("Response from server:", response.data);
+
+          const recommendedATMs = response.data.filter(
+            (atm) => atm.Recommendation === 1
+          );
+
+          const recommendedAtmDetails = recommendedATMs
+            .map((recAtm) => {
+              const atmDetail = atmData.find(
+                (atm) => atm.atmId === recAtm.atmId
+              );
+              if (!atmDetail) {
+                console.warn(`ATM ID ${recAtm.atmId} not found in atmData`);
+              }
+              return atmDetail
+                ? { ...atmDetail, Recommendation: recAtm.Recommendation }
+                : null;
+            })
+            .filter((atm) => atm !== null);
+          console.log("Detailed recommended ATMs:", recommendedAtmDetails);
+          setRecommendedATMs(recommendedAtmDetails);
+        })
+
         .catch((error) => console.error("Error:", error));
     }
   }, [userLocation]);
@@ -148,17 +161,19 @@ function App() {
             />
           </Marker>
         ))}
-        {recommendedATM && (
-          <Marker
-            latitude={recommendedATM.latitude}
-            longitude={recommendedATM.longitude}
-          >
-            <FontAwesomeIcon
-              icon={faMapMarkerAlt}
-              style={{ color: "green", fontSize: "24px" }}
-            />
-          </Marker>
-        )}
+        {recommendedATMs &&
+          recommendedATMs.map((atm) => (
+            <Marker
+              key={atm.atmId}
+              latitude={atm.latitude}
+              longitude={atm.longitude}
+            >
+              <FontAwesomeIcon
+                icon={faMapMarkerAlt}
+                style={{ color: "green", fontSize: "24px" }}
+              />
+            </Marker>
+          ))}
       </ReactMapGL>
     </div>
   );
