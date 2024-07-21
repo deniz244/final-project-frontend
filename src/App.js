@@ -1,12 +1,18 @@
 import "mapbox-gl/dist/mapbox-gl.css";
 import React, { useEffect, useState } from "react";
-import ReactMapGL, { Marker, NavigationControl } from "react-map-gl";
+import ReactMapGL, {
+  Marker,
+  NavigationControl,
+  Source,
+  Layer,
+} from "react-map-gl";
 import axios from "axios";
 import "./App.css";
 import atmData from "./data/atmData.json";
 //import LoadingScreen from "./components/LoadingScreen";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faMapMarkerAlt, faPerson } from "@fortawesome/free-solid-svg-icons";
+import MapboxDirections from "@mapbox/mapbox-gl-directions/dist/mapbox-gl-directions";
 
 const TOKEN = process.env.REACT_APP_TOKEN;
 
@@ -40,6 +46,7 @@ function App() {
   //const [loading, setLoading] = useState(true);
   const [nearestATMs, setNearestATMs] = useState([]);
   const [recommendedATMs, setRecommendedATMs] = useState(null);
+  const [route, setRoute] = useState(null);
 
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
@@ -75,7 +82,7 @@ function App() {
       });
 
       distances.sort((a, b) => a.distance - b.distance);
-      const nearestATMs = distances.slice(0, 10);
+      const nearestATMs = distances.slice(0, 10); //15-20
       setNearestATMs(nearestATMs);
 
       // Create CSV content
@@ -109,7 +116,15 @@ function App() {
                 console.warn(`ATM ID ${recAtm.atmId} not found in atmData`);
               }
               return atmDetail
-                ? { ...atmDetail, Recommendation: recAtm.Recommendation }
+                ? {
+                    ...atmDetail,
+                    Recommendation: recAtm.Recommendation,
+                    Rating: recAtm.Rating,
+                    Currency: recAtm.Currency,
+                    distance: nearestATMs.find(
+                      (atm) => atm.atmId === recAtm.atmId
+                    )?.distance,
+                  }
                 : null;
             })
             .filter((atm) => atm !== null);
@@ -121,13 +136,56 @@ function App() {
     }
   }, [userLocation]);
 
+  const getRoute = async (userLocation, atmLocation) => {
+    const query = `https://api.mapbox.com/directions/v5/mapbox/driving/${userLocation.longitude},${userLocation.latitude};${atmLocation.longitude},${atmLocation.latitude}?steps=true&geometries=geojson&access_token=${TOKEN}`;
+    const response = await axios.get(query);
+    const data = response.data.routes[0];
+    const route = data.geometry.coordinates;
+    const geojson = {
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "LineString",
+        coordinates: route,
+      },
+    };
+    return geojson;
+  };
+
+  useEffect(() => {
+    if (userLocation && recommendedATMs && recommendedATMs.length > 0) {
+      const nearestRecommendedATM = recommendedATMs[0];
+      getRoute(userLocation, nearestRecommendedATM).then(setRoute);
+    }
+  }, [userLocation, recommendedATMs]);
+
   /*
   if (loading) {
     return <LoadingScreen />;
   }
 */
+
+  const showRecommendedATMs = () => {
+    if (!recommendedATMs) return null;
+    return recommendedATMs.map((atm) => (
+      <li key={atm.atmId}>
+        <strong>{atm.name}</strong>
+        <br />
+        {atm.address}
+        <br />
+        <strong>Mesafe:</strong>{" "}
+        {atm.distance ? atm.distance.toFixed(2) : "N/A"} km
+        <br />
+        <strong>Kullanıcı puanı:</strong> {atm.Rating}
+        <br />
+        <strong>Döviz Çekilebilir mi?:</strong>{" "}
+        {atm.Currency ? "Evet" : "Hayır"}
+      </li>
+    ));
+  };
+
   return (
-    <div style={{ width: "100vw", height: "100vh" }}>
+    <div className="map-container">
       <ReactMapGL
         {...viewport}
         width="100%"
@@ -174,7 +232,28 @@ function App() {
               />
             </Marker>
           ))}
+        {route && (
+          <Source id="route" type="geojson" data={route}>
+            <Layer
+              id="route"
+              type="line"
+              source="route"
+              layout={{
+                "line-join": "round",
+                "line-cap": "round",
+              }}
+              paint={{
+                "line-color": "#1da1f2",
+                "line-width": 7,
+              }}
+            />
+          </Source>
+        )}
       </ReactMapGL>
+      <div className="recommended-atms-list">
+        <h3>Önerilen ATMler</h3>
+        <ul>{showRecommendedATMs()}</ul>
+      </div>
     </div>
   );
 }
